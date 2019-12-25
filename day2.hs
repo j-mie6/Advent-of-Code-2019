@@ -2,8 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 import Data.Array.IO
-import Control.Monad.List
-import Control.Monad.Trans
+import Control.Monad
 import IntCode
 
 instance (Read a, Show a) => MonadInput IO a where
@@ -21,18 +20,13 @@ runWithValues x y =
 task1 :: IO Int
 task1 = runWithValues 12 2
 
--- The ListT monad, though usually dodgy, works well here
--- It does not, however, short circuit
--- We non-deterministically choose two numbers between 0 to 99
--- We run this program with those values
-task2 :: IO [(Int, Int)]
-task2 = runListT $
-  do let val = 19690720
-     x <- ListT (return [0..99])
-     y <- ListT (return [0..99])
-     z <- lift $ runWithValues x y
-     guard (z == val)
-     return (x, y)
+task2 :: IO (Int, Int)
+task2 = fmap head . sequence $
+  do x <- [0..99]
+     y <- [0..99]
+     return $ do z <- runWithValues x y
+                 guard (z == 19690720)
+                 return (x, y)
 
 split :: (a -> Bool) -> [a] -> [[a]]
 split f = foldr g [[]]
