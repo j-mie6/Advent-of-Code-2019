@@ -57,8 +57,11 @@ exit :: (MonadState (IntState arr x) m , MonadReader (arr x x -> m ()) m) => m (
 exit = do arr <- gets mem
           join (asks ($ arr))
 
+jump :: MonadState (IntState arr x) m => x -> m ()
+jump i = modify (\s -> s {pc = i})
+
 incPc :: (Num x, MonadState (IntState arr x) m) => x -> m ()
-incPc i = modify (\s -> s {pc = pc s + i})
+incPc i = gets ((+ i) . pc) >>= jump
 
 readMem :: MonadIntCode m t arr x => x -> t m x
 readMem idx = do ensureMemSize idx
@@ -90,10 +93,11 @@ data Fetched x = Fetched
   { op :: Op 
   , ops :: Ops x }
 data Ops x = BinOp (Operand x) (Operand x) (Operand x)
+           | JmpOp (Operand x) (Operand x)
            | UnaryOp (Operand x)
            | NoOps deriving Show
 data Operand x = Operand { mode :: Mode, val :: x } deriving Show
-data Op = Add | Mult | Halt | In | Out | Off deriving Show
+data Op = Add | Mult | In | Out | JmpT | JmpF | Lt | Eq | Off | Halt deriving Show
 data Mode = Pos | Imm | Rel deriving Show
 
 readByMode :: MonadIntCode m t arr x => Operand x -> t m x
@@ -108,6 +112,7 @@ writeByMode (Operand Rel x) y = gets ((+ x) . rel) >>= flip writeMem y
 
 size :: Num x => Ops x -> x
 size (BinOp _ _ _) = 3
+size (JmpOp _ _) = 2
 size (UnaryOp _) = 1
 size NoOps = 0
 
@@ -122,6 +127,10 @@ opOf 1  = Add
 opOf 2  = Mult
 opOf 3  = In
 opOf 4  = Out
+opOf 5  = JmpT
+opOf 6  = JmpF
+opOf 7  = Lt
+opOf 8  = Eq
 opOf 9  = Off
 opOf 99 = Halt
 opOf _  = error "Invalid opcode"
@@ -141,12 +150,19 @@ fetch =
          Mult -> readBinary i modes
          In   -> readUnary i modes
          Out  -> readUnary i modes
+         JmpT -> readJmp i modes
+         JmpF -> readJmp i modes
+         Lt   -> readBinary i modes
+         Eq   -> readBinary i modes
          Off  -> readUnary i modes
          Halt -> return NoOps
        incPc (size ops + 1)
        return (Fetched opcode ops)
     where
       readUnary i  (m1:_) = UnaryOp . Operand m1 <$> readMem (i + 1)
+      readJmp i (m1:m2:_) = 
+        liftM2 JmpOp (Operand m1 <$> readMem (i + 1))
+                     (Operand m2 <$> readMem (i + 2))                    
       readBinary i (m1:m2:m3:_) = 
         liftM3 BinOp (Operand m1 <$> readMem (i + 1)) 
                      (Operand m2 <$> readMem (i + 2)) 
@@ -158,6 +174,18 @@ liftBin op (BinOp src1 src2 dst) =
               (readByMode src2) 
   >>= writeByMode dst
 
+liftJmp :: MonadIntCode m t arr x => (x -> Bool) -> Ops x -> t m ()
+liftJmp jmp (JmpOp cond dst) =
+  do x <- readByMode cond
+     if jmp x 
+       then readByMode dst >>= jump
+       else return ()     
+
+cmpToInt :: Num x => (x -> x -> Bool) -> x -> x -> x
+cmpToInt cmp x y 
+  | cmp x y   = 1
+  | otherwise = 0
+
 decode :: MonadIntCode m t arr x => Fetched x -> t m ()
 decode (Fetched Add ops)           = liftBin (+) ops
 decode (Fetched Mult ops)          = liftBin (*) ops
@@ -165,6 +193,10 @@ decode (Fetched In (UnaryOp dst))  = do x <- input
                                         writeByMode dst x
 decode (Fetched Out (UnaryOp src)) = do x <- readByMode src
                                         output x
+decode (Fetched JmpT ops)          = liftJmp (/= 0) ops
+decode (Fetched JmpF ops)          = liftJmp (== 0) ops
+decode (Fetched Lt ops)            = liftBin (cmpToInt (<)) ops
+decode (Fetched Eq ops)            = liftBin (cmpToInt (==)) ops
 decode (Fetched Off (UnaryOp src)) = do x <- readByMode src
                                         modify (\s -> s {rel = rel s + x})
 decode (Fetched Halt NoOps)        = exit
@@ -172,7 +204,7 @@ decode (Fetched Halt NoOps)        = exit
 initialise :: (MArray arr x m, Ix x, Num x, Monad m) => [x] -> m (arr x x)
 initialise xs = newListArray (0, fromIntegral (length xs - 1)) xs
 
-execute :: (Ix x, Integral x, MonadInput m x, MArray arr x m) => arr x x -> m x--(arr Int Int)
+execute :: (Ix x, Integral x, MonadInput m x, MArray arr x m) => arr x x -> m x
 execute arr = flip runContT return $
   -- callCC registers the readArray arr' 0 as the place where code should return to
   -- when onExit is called, beautiful beautiful technique
@@ -181,14 +213,5 @@ execute arr = flip runContT return $
          flip evalStateT (IntState 0 arr 0) $
            runIntCode exec)
      readArray arr' 0
-     --return arr'
   where
     exec = do fetch >>= decode; exec
-
-{-execIntCode :: [Int] -> IO Int
-execIntCode = initialise @IO @IOArray >=> execute
-
-test :: [Int] -> IO ()
-test xs = execIntCode xs >>= freeze @Int @IOArray @Int @IO @Array >>= (\arr -> 
-  let ys = elems arr
-  in print (take (length xs) ys))-}
