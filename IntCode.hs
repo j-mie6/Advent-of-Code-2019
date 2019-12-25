@@ -8,20 +8,18 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE PatternSynonyms #-}
 module IntCode where
+import Data.Array
 import Data.Array.Base
 import Control.Monad
 import Control.Monad.Cont
 import Control.Monad.Reader
 import Control.Monad.Trans
 
-type Val = Integer
-type Idx = Val
-type Op = Val
-type MonadIntCode m t = ( MonadTrans t
-                        , MonadReader (() -> t m ()) (t m)
-                        , MonadCont (t m)
-                        , MonadInput m Int) 
-type Intcode m t arr = (MArray arr Idx m, MonadIntCode m t)
+type MonadIntCode m t x = ( MonadTrans t
+                          , MonadReader (() -> t m ()) (t m)
+                          , MonadCont (t m)
+                          , MonadInput m x)
+type Intcode m t arr x = (Ix x, Num x, MArray arr x m, MonadIntCode m t x)
 newtype IntCode r m a = IntCode {runIntCode :: ReaderT (() -> IntCode r m ()) (ContT r m) a}
   deriving Functor
   deriving Applicative
@@ -47,7 +45,7 @@ instance (Monad m, MonadTrans t, Monad (t m), MArray arr e m)
   unsafeRead arr idx = lift (unsafeRead arr idx)
   unsafeWrite arr idx x = lift (unsafeWrite arr idx x)
   
-liftOp :: Intcode m t arr => (Val -> Val -> Val) -> arr Idx Val -> Idx -> Idx -> Idx -> t m ()
+liftOp :: Intcode m t arr x => (x -> x -> x) -> arr x x -> x -> x -> x -> t m ()
 liftOp op arr dst src1 src2 =
   do x <- readArray arr src1
      y <- readArray arr src2
@@ -58,7 +56,7 @@ noargs m _ _ _ _ = m
 -- it jumps to the continuation point stored by callCC
 -- this has the effect of skipping the rest of the code
 
-exit :: MonadIntCode m t => t m ()
+exit :: MonadReader (() -> m ()) m => m ()
 exit = join (asks ($ ()))
 
 pattern Add  <- 1
@@ -72,14 +70,14 @@ pattern Pos <- 0
 pattern Imm <- 1
 pattern Rel <- 2
 
-decode :: Intcode m t arr => Op -> (arr Idx Val -> Idx -> Idx -> Idx -> t m ())
+decode :: Intcode m t arr x => x -> (arr x x -> x -> x -> x -> t m ())
 decode Add  = liftOp (+)
 decode Mult = liftOp (*)
 decode Halt = noargs exit
 decode _  = noargs (fail "Unknown opcode")
 
 -- This will need remodelling for when the opcode has a varying length
-fetch :: Intcode m t arr => arr Idx Val -> Idx -> t m (Idx, Op, Val, Val, Val)
+fetch :: Intcode m t arr x => arr x x -> x -> t m (x, x, x, x, x)
 fetch arr i =
     do opcode <- readArray arr i
        src1   <- readArray arr (i + 1)
@@ -87,12 +85,12 @@ fetch arr i =
        dest   <- readArray arr (i + 3)
        return (i + 4, opcode, src1, src2, dest)
 
-initialise :: (Monad m, MArray arr Val m) => [Val] -> m (arr Idx Val)
+initialise :: (Ix x, Num x, Monad m, MArray arr x m) => [x] -> m (arr x x)
 initialise xs = newListArray (0, fromIntegral m) xs
   where n = length xs
         m = n + (4 - n `mod` 4)
 
-execute :: (MonadInput m Int, MArray arr Val m) => arr Idx Val -> m Val--(arr Int Int)
+execute :: (Ix x, Num x, MonadInput m x, MArray arr x m) => arr x x -> m x--(arr Int Int)
 execute arr = flip runContT return $
   -- callCC registers the readArray arr 0 as the place where code should return to
   -- when onExit is called, beautiful beautiful technique
