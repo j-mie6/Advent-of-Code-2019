@@ -35,7 +35,7 @@ pattern Pos <- 0
 pattern Imm <- 1
 pattern Rel <- 2
 
-data IntState arr x = IntState { pc :: x, mem :: arr x x }
+data IntState arr x = IntState { pc :: x, mem :: arr x x, rel :: x }
 newtype IntCode r arr x m a = IntCode {runIntCode :: StateT (IntState arr x) (ReaderT (arr x x -> IntCode r arr x m ()) (ContT r m)) a}
   deriving Functor
   deriving Applicative
@@ -141,7 +141,8 @@ decode (Fetched In (UnaryOp dst))  = do x <- input
                                         writeMem dst x
 decode (Fetched Out (UnaryOp src)) = do x <- readMem src
                                         output x
---decode (Fetched Off (UnaryOp x))   = undefined
+decode (Fetched Off (UnaryOp src)) = do x <- readMem src
+                                        modify (\s -> s {rel = rel s + x})
 decode (Fetched Halt NoOps)        = exit
 decode _                           = fail "Unknown opcode"
 
@@ -150,18 +151,16 @@ initialise xs = newListArray (0, fromIntegral (length xs - 1)) xs
 
 execute :: (Ix x, Num x, MonadInput m x, MArray arr x m) => arr x x -> m x--(arr Int Int)
 execute arr = flip runContT return $
-  -- callCC registers the readArray arr 0 as the place where code should return to
+  -- callCC registers the readArray arr' 0 as the place where code should return to
   -- when onExit is called, beautiful beautiful technique
   do arr' <- callCC (\onExit -> 
        flip runReaderT (IntCode . lift . lift . onExit) $
-         flip evalStateT (IntState 0 arr) $
+         flip evalStateT (IntState 0 arr 0) $
            runIntCode exec)
      readArray arr' 0
      --return arr'
   where
-    exec = do fetched <- fetch
-              decode fetched
-              exec
+    exec = do fetch >>= decode; exec
 
 {-execIntCode :: [Int] -> IO Int
 execIntCode = initialise @IO @IOArray >=> execute
