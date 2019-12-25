@@ -13,7 +13,7 @@ instance (Read a, Show a) => MonadInput IO a where
 runWithValues :: Int -> Int -> IO Int
 runWithValues x y =
   do xs <- Main.input
-     arr <- initialise @Int @IO @IOArray xs
+     arr <- initialise @IOArray xs
      writeArray arr 1 x
      writeArray arr 2 y
      execute arr

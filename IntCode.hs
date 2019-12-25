@@ -85,7 +85,7 @@ fetch arr i =
        dest   <- readArray arr (i + 3)
        return (i + 4, opcode, src1, src2, dest)
 
-initialise :: (Ix x, Num x, Monad m, MArray arr x m) => [x] -> m (arr x x)
+initialise :: (MArray arr x m, Ix x, Num x, Monad m) => [x] -> m (arr x x)
 initialise xs = newListArray (0, fromIntegral m) xs
   where n = length xs
         m = n + (4 - n `mod` 4)
