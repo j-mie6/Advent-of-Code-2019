@@ -7,7 +7,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE PatternSynonyms #-}
 module IntCode where
-import Data.Array
+import Data.Ix
 import Data.Array.Base
 import Control.Monad
 import Control.Monad.Cont
@@ -73,12 +73,30 @@ incPc :: (Num x, MonadState (IntState arr x) m) => x -> m ()
 incPc i = modify (\s -> s {pc = pc s + i})
 
 readMem :: MonadIntCode m t arr x => x -> t m x
-readMem idx = do arr <- gets mem
+readMem idx = do ensureMemSize idx
+                 arr <- gets mem
                  readArray arr idx
 
 writeMem :: MonadIntCode m t arr x => x -> x -> t m ()
-writeMem idx x = do arr <- gets mem
+writeMem idx x = do ensureMemSize idx
+                    arr <- gets mem
                     writeArray arr idx x
+
+ensureMemSize :: MonadIntCode m t arr x => x -> t m ()
+ensureMemSize idx = 
+  do arr <- gets mem
+     upper <- snd <$> getBounds arr
+     if idx > upper 
+       then do arr' <- newArray (0, idx) 0
+               let copy i
+                     | i <= upper = 
+                        do readArray arr i >>= writeArray arr' i
+                           copy (i + 1)
+                     | otherwise = return ()
+               copy 0
+               return arr'
+               modify (\s -> s {mem = arr'})
+       else return ()     
 
 data Fetched x = Fetched 
   { op :: x 
@@ -128,7 +146,7 @@ decode (Fetched Halt NoOps)        = exit
 decode _                           = fail "Unknown opcode"
 
 initialise :: (MArray arr x m, Ix x, Num x, Monad m) => [x] -> m (arr x x)
-initialise xs = newListArray (0, fromIntegral (length xs)) xs
+initialise xs = newListArray (0, fromIntegral (length xs - 1)) xs
 
 execute :: (Ix x, Num x, MonadInput m x, MArray arr x m) => arr x x -> m x--(arr Int Int)
 execute arr = flip runContT return $
