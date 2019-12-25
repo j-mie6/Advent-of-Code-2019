@@ -91,10 +91,20 @@ data Fetched x = Fetched
   , ops :: Ops x }
 data Ops x = BinOp (Operand x) (Operand x) (Operand x)
            | UnaryOp (Operand x)
-           | NoOps
-data Operand x = Operand { mode :: Mode, val :: x }
-data Op = Add | Mult | Halt | In | Out | Off
-data Mode = Pos | Imm | Rel
+           | NoOps deriving Show
+data Operand x = Operand { mode :: Mode, val :: x } deriving Show
+data Op = Add | Mult | Halt | In | Out | Off deriving Show
+data Mode = Pos | Imm | Rel deriving Show
+
+readByMode :: MonadIntCode m t arr x => Operand x -> t m x
+readByMode (Operand Pos x) = readMem x
+readByMode (Operand Imm x) = return x
+readByMode (Operand Rel x) = gets ((+ x) . rel) >>= readMem
+
+writeByMode :: MonadIntCode m t arr x => Operand x -> x -> t m ()
+writeByMode (Operand Pos x) y = writeMem x y
+writeByMode (Operand Imm _) _ = error "Cannot write to immediate value"
+writeByMode (Operand Rel x) y = gets ((+ x) . rel) >>= flip writeMem y
 
 size :: Num x => Ops x -> x
 size (BinOp _ _ _) = 3
@@ -144,18 +154,18 @@ fetch =
 
 liftBin :: MonadIntCode m t arr x => (x -> x -> x) -> Ops x -> t m ()
 liftBin op (BinOp src1 src2 dst) = 
-    liftM2 op (readMem (val src1)) 
-              (readMem (val src2)) 
-  >>= writeMem (val dst)
+    liftM2 op (readByMode src1) 
+              (readByMode src2) 
+  >>= writeByMode dst
 
 decode :: MonadIntCode m t arr x => Fetched x -> t m ()
 decode (Fetched Add ops)           = liftBin (+) ops
 decode (Fetched Mult ops)          = liftBin (*) ops
 decode (Fetched In (UnaryOp dst))  = do x <- input
-                                        writeMem (val dst) x
-decode (Fetched Out (UnaryOp src)) = do x <- readMem (val src)
+                                        writeByMode dst x
+decode (Fetched Out (UnaryOp src)) = do x <- readByMode src
                                         output x
-decode (Fetched Off (UnaryOp src)) = do x <- readMem (val src)
+decode (Fetched Off (UnaryOp src)) = do x <- readByMode src
                                         modify (\s -> s {rel = rel s + x})
 decode (Fetched Halt NoOps)        = exit
 
