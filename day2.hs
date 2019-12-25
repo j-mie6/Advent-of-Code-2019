@@ -1,12 +1,18 @@
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 import Data.Array.IO
 import Control.Monad.List
 import Control.Monad.Trans
 import IntCode
 
+instance (Read a, Show a) => MonadInput IO a where
+  input  = readLn
+  output = print
+
 runWithValues :: Int -> Int -> IO Int
 runWithValues x y =
-  do xs <- input
+  do xs <- Main.input
      arr <- initialise @IO @IOArray xs
      writeArray arr 1 x
      writeArray arr 2 y

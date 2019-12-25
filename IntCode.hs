@@ -7,18 +7,16 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE StandaloneDeriving #-}
 module IntCode where
-import Data.Array.IO
-import Data.Array.MArray
+import Data.Array.Base
 import Control.Monad
 import Control.Monad.Cont
 import Control.Monad.Reader
 import Control.Monad.Trans
 
-type MonadIntCode m t = ( Monad m
-                        , MonadTrans t
-                        , Monad (t m)
+type MonadIntCode m t = ( MonadTrans t
                         , MonadReader (() -> t m ()) (t m)
-                        , MonadCont (t m)) 
+                        , MonadCont (t m)
+                        , MonadInput m Int) 
 type Intcode m t arr = (MArray arr Int m, MonadIntCode m t)
 newtype IntCode r m a = IntCode {runIntCode :: ReaderT (() -> IntCode r m ()) (ContT r m) a}
   deriving Functor
@@ -28,22 +26,28 @@ newtype IntCode r m a = IntCode {runIntCode :: ReaderT (() -> IntCode r m ()) (C
   deriving MonadCont
 instance MonadTrans (IntCode r) where lift m = IntCode (lift (lift m))
 
-{-instance Monad m 
-      => MonadTrans t 
-      => Monad (t m)
-      => MArray arr e m
+class Monad m => MonadInput m a where
+  input  :: m a
+  output :: a -> m ()
+
+instance (MonadTrans t, Monad (t m), MonadInput m a)
+      => MonadInput (t m) a where
+  input = lift input
+  output = lift . output
+
+instance (Monad m, MonadTrans t, Monad (t m), MArray arr e m)
       => MArray arr e (t m) where
   getBounds arr = lift (getBounds arr)
   getNumElements arr = lift (getNumElements arr)
   newArray bnds x = lift (newArray bnds x)
   unsafeRead arr idx = lift (unsafeRead arr idx)
-  unsafeWrite arr idx x = lift (unsafeWrite arr idx x)-}
+  unsafeWrite arr idx x = lift (unsafeWrite arr idx x)
   
 liftOp :: Intcode m t arr => (Int -> Int -> Int) -> arr Int Int -> Int -> Int -> Int -> t m ()
 liftOp op arr dst src1 src2 =
-  do x <- lift $ readArray arr src1
-     y <- lift $ readArray arr src2
-     lift $ writeArray arr dst (op x y)
+  do x <- readArray arr src1
+     y <- readArray arr src2
+     writeArray arr dst (op x y)
 
 noargs m _ _ _ _ = m
 -- This is magical, when this is executed then
@@ -62,10 +66,10 @@ decode _  = noargs (fail "Unknown opcode")
 -- This will need remodelling for when the opcode has a varying length
 fetch :: Intcode m t arr => arr Int Int -> Int -> t m (Int, Int, Int, Int, Int)
 fetch arr i =
-    do opcode <- lift $ readArray arr i
-       src1   <- lift $ readArray arr (i + 1)
-       src2   <- lift $ readArray arr (i + 2)
-       dest   <- lift $ readArray arr (i + 3)
+    do opcode <- readArray arr i
+       src1   <- readArray arr (i + 1)
+       src2   <- readArray arr (i + 2)
+       dest   <- readArray arr (i + 3)
        return (i + 4, opcode, src1, src2, dest)
 
 initialise :: (Monad m, MArray arr Int m) => [Int] -> m (arr Int Int)
@@ -73,7 +77,7 @@ initialise xs = newListArray (0, m) xs
   where n = length xs
         m = n + (4 - n `mod` 4)
 
-execute :: (Monad m, MArray arr Int m) => arr Int Int -> m Int--(arr Int Int)
+execute :: (MonadInput m Int, MArray arr Int m) => arr Int Int -> m Int--(arr Int Int)
 execute arr = flip runContT return $
   -- callCC registers the readArray arr 0 as the place where code should return to
   -- when onExit is called, beautiful beautiful technique
