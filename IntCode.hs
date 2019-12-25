@@ -5,7 +5,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE PatternSynonyms #-}
 module IntCode where
 import Data.Ix
 import Data.Array.Base
@@ -16,24 +15,13 @@ import Control.Monad.State
 import Control.Monad.Trans
 
 type MonadIntCode m t arr x = ( Ix x
-                              , Num x
+                              , Integral x
                               , MArray arr x m
                               , MonadTrans t
                               , MonadReader (arr x x -> t m ()) (t m)
                               , MonadState (IntState arr x) (t m)
                               , MonadCont (t m)
                               , MonadInput m x)
-
-pattern Add  <- 1
-pattern Mult <- 2
-pattern In   <- 3
-pattern Out  <- 4
-pattern Off  <- 9
-pattern Halt <- 99
-
-pattern Pos <- 0
-pattern Imm <- 1
-pattern Rel <- 2
 
 data IntState arr x = IntState { pc :: x, mem :: arr x x, rel :: x }
 newtype IntCode r arr x m a = IntCode {runIntCode :: StateT (IntState arr x) (ReaderT (arr x x -> IntCode r arr x m ()) (ContT r m)) a}
@@ -96,60 +84,85 @@ ensureMemSize idx =
                copy 0
                return arr'
                modify (\s -> s {mem = arr'})
-       else return ()     
+       else return ()
 
 data Fetched x = Fetched 
-  { op :: x 
+  { op :: Op 
   , ops :: Ops x }
-data Ops x = BinOp x x x
-           | UnaryOp x
+data Ops x = BinOp (Operand x) (Operand x) (Operand x)
+           | UnaryOp (Operand x)
            | NoOps
+data Operand x = Operand { mode :: Mode, val :: x }
+data Op = Add | Mult | Halt | In | Out | Off
+data Mode = Pos | Imm | Rel
 
 size :: Num x => Ops x -> x
 size (BinOp _ _ _) = 3
 size (UnaryOp _) = 1
 size NoOps = 0
 
+modeOf :: (Eq x, Num x) => x -> Mode
+modeOf 0 = Pos
+modeOf 1 = Imm
+modeOf 2 = Rel
+modeOf _ = error "Invalid address mode"
+
+opOf :: (Eq x, Num x) => x -> Op
+opOf 1  = Add
+opOf 2  = Mult
+opOf 3  = In
+opOf 4  = Out
+opOf 9  = Off
+opOf 99 = Halt
+opOf _  = error "Invalid opcode"
+
+extract :: Integral x => x -> (Op, [Mode])
+extract x = (opOf (x `mod` 100), modes (x `div` 100))
+  where
+    modes 0 = repeat Pos
+    modes x = modeOf (x `mod` 10) : modes (x `div` 10)
+
 fetch :: MonadIntCode m t arr x => t m (Fetched x)
 fetch =
     do i <- gets pc
-       opcode <- readMem i
+       (opcode, modes) <- extract <$> readMem i
        ops <- case opcode of
-         Add  -> readBinary i
-         Mult -> readBinary i
-         In   -> readUnary i
-         Out  -> readUnary i
-         Off  -> readUnary i
+         Add  -> readBinary i modes
+         Mult -> readBinary i modes
+         In   -> readUnary i modes
+         Out  -> readUnary i modes
+         Off  -> readUnary i modes
          Halt -> return NoOps
-         _    -> fail "Unknown opcode"
        incPc (size ops + 1)
        return (Fetched opcode ops)
     where
-      readUnary i   = UnaryOp <$> readMem (i + 1)
-      readBinary i  = liftM3 BinOp (readMem (i + 1)) 
-                                   (readMem (i + 2)) 
-                                   (readMem (i + 3))
+      readUnary i  (m1:_) = UnaryOp . Operand m1 <$> readMem (i + 1)
+      readBinary i (m1:m2:m3:_) = 
+        liftM3 BinOp (Operand m1 <$> readMem (i + 1)) 
+                     (Operand m2 <$> readMem (i + 2)) 
+                     (Operand m3 <$> readMem (i + 3))
 
 liftBin :: MonadIntCode m t arr x => (x -> x -> x) -> Ops x -> t m ()
 liftBin op (BinOp src1 src2 dst) = 
-  liftM2 op (readMem src1) (readMem src2) >>= writeMem dst
+    liftM2 op (readMem (val src1)) 
+              (readMem (val src2)) 
+  >>= writeMem (val dst)
 
 decode :: MonadIntCode m t arr x => Fetched x -> t m ()
 decode (Fetched Add ops)           = liftBin (+) ops
 decode (Fetched Mult ops)          = liftBin (*) ops
 decode (Fetched In (UnaryOp dst))  = do x <- input
-                                        writeMem dst x
-decode (Fetched Out (UnaryOp src)) = do x <- readMem src
+                                        writeMem (val dst) x
+decode (Fetched Out (UnaryOp src)) = do x <- readMem (val src)
                                         output x
-decode (Fetched Off (UnaryOp src)) = do x <- readMem src
+decode (Fetched Off (UnaryOp src)) = do x <- readMem (val src)
                                         modify (\s -> s {rel = rel s + x})
 decode (Fetched Halt NoOps)        = exit
-decode _                           = fail "Unknown opcode"
 
 initialise :: (MArray arr x m, Ix x, Num x, Monad m) => [x] -> m (arr x x)
 initialise xs = newListArray (0, fromIntegral (length xs - 1)) xs
 
-execute :: (Ix x, Num x, MonadInput m x, MArray arr x m) => arr x x -> m x--(arr Int Int)
+execute :: (Ix x, Integral x, MonadInput m x, MArray arr x m) => arr x x -> m x--(arr Int Int)
 execute arr = flip runContT return $
   -- callCC registers the readArray arr' 0 as the place where code should return to
   -- when onExit is called, beautiful beautiful technique
