@@ -2,8 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 import Data.Array.IO
-import Control.Monad.List
-import Control.Monad.Trans
+import Control.Monad
 import IntCode
 
 instance (Read a, Show a) => MonadInput IO a where

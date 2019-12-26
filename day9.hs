@@ -2,15 +2,14 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 import Data.Array.IO
-import Control.Monad.List
-import Control.Monad.Trans
+import Control.Monad
 import IntCode
 
 instance (Read a, Show a) => MonadInput IO a where
   input  = readLn
   output = print
 
-boost :: IO Int
+boost :: IO Integer
 boost = Main.input >>= (initialise @IOArray >=> execute)
 
 split :: (a -> Bool) -> [a] -> [[a]]
@@ -20,5 +19,5 @@ split f = foldr g [[]]
       | f x  = []:ys:yss
       | otherwise = (x:ys):yss
 
-input :: IO [Int]
+input :: IO [Integer]
 input = map read . split (== ',') <$> readFile "day9-input.txt"
