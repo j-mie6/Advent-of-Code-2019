@@ -36,10 +36,10 @@ findMax =
 -- will cycle round until the final one outputs one more
 -- value, so we are forcing the `last` of the final os
 loop :: [Int] -> [Int] -> [Int] -> [Int]
-loop xs = foldr (\p next is1 -> ampControl xs (p : next is1)) id
+loop xs = foldr (\p next is1 -> ampControl xs (p : next is1)) (0:)
 
 tie :: [Int] -> [Int] -> Int
-tie xs ps = let os = loop xs ps (0 : init os) in last os
+tie xs ps = let os = loop xs ps (init os) in last os
 
 findMaxLoop :: IO Int
 findMaxLoop =
