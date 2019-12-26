@@ -16,35 +16,37 @@ mkProgram :: [Int] -> PipeT Int (ST s) (STArray s Int Int)
 mkProgram = initialise
 
 ampControl :: [Int] -> [Int] -> [Int]
-ampControl xs is = snd (runST (runPipeT (mkProgram xs >>= execute) is))
+--ampControl xs is = snd (runST (runPipeT (mkProgram xs >>= execute) is))
+ampControl _ = snd . runPipe twoIncLoop
 
-feed :: [Int] -> Int -> Int -> Int
-feed xs phase input = 
-  let [output] = ampControl xs [phase, input]
-  in output
+-- Let's try running it with this program instead (i.e. just Pipe)
+-- and see what happens?
+twoIncLoop :: Pipe Int ()
+twoIncLoop = 
+  do pipeIn
+     x <- pipeIn
+     pipeOut (x + 1)
+     x <- pipeIn
+     pipeOut (x + 1)
 
-pipeline :: [Int] -> [Int] -> Int
-pipeline xs = foldl (flip (feed xs)) 0
-
-findMax :: IO Int
-findMax = 
-  do xs <- Main.input
-     return (maximum (map (pipeline xs) (permutations [0..4])))
-
--- The 5 amplifiers need to be connected in a circle and
--- given 5-9 as their phases, the first is fed 0 and they
--- will cycle round until the final one outputs one more
--- value, so we are forcing the `last` of the final os
 loop :: [Int] -> [Int] -> [Int] -> [Int]
 loop xs = foldr (\p next is1 -> ampControl xs (p : next is1)) (0:)
 
-tie :: [Int] -> [Int] -> Int
-tie xs ps = let os = loop xs ps (init os) in last os
+pipeline :: [Int] -> [Int] -> Int
+pipeline xs ps = 
+  let os = loop xs ps (init os) 
+  in last os
 
-findMaxLoop :: IO Int
-findMaxLoop =
+findMaxConfig :: [Int] -> IO Int
+findMaxConfig ps =
   do xs <- Main.input
-     return (maximum (map (tie xs) (permutations [5..9])))
+     return (maximum (map (pipeline xs) (permutations ps)))
+
+task1 :: IO Int
+task1 = findMaxConfig [0..4]
+
+task2 :: IO Int
+task2 = findMaxConfig [5..9]
 
 split :: (a -> Bool) -> [a] -> [[a]]
 split f = foldr g [[]]
