@@ -36,3 +36,6 @@ pipeOut x = PipeT (\is k -> k () is (x:))
 
 pipeIn :: Monad m => PipeT x m x
 pipeIn = PipeT (\(~(x:is)) k -> k x is id)
+
+pipeMore :: Monad m => PipeT x m Bool
+pipeMore = PipeT (\is k -> k (not (null is)) is id)

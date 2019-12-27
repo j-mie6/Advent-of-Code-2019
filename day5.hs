@@ -12,12 +12,5 @@ instance (Read a, Show a) => MonadInput IO a where
 test :: IO Int
 test = Main.input >>= (initialise @IOArray >=> execute)
 
-split :: (a -> Bool) -> [a] -> [[a]]
-split f = foldr g [[]]
-  where
-    g x (ys:yss) 
-      | f x  = []:ys:yss
-      | otherwise = (x:ys):yss
-
 input :: IO [Int]
-input = map read . split (== ',') <$> readFile "day5-input.txt"
+input = readProgram "day5-input.txt"

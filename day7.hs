@@ -16,7 +16,6 @@ mkProgram = initialise
 
 ampControl :: [Int] -> [Int] -> [Int]
 ampControl xs is = snd (runST (runPipeT (mkProgram xs >>= execute) is))
---ampControl _ = snd . runPipe twoIncLoop
 
 loop :: [Int] -> [Int] -> [Int] -> [Int]
 loop xs = foldr (\p next is1 -> ampControl xs (p : next is1)) (0:)
@@ -37,12 +36,5 @@ task1 = findMaxConfig [0..4]
 task2 :: IO Int
 task2 = findMaxConfig [5..9]
 
-split :: (a -> Bool) -> [a] -> [[a]]
-split f = foldr g [[]]
-  where
-    g x (ys:yss) 
-      | f x  = []:ys:yss
-      | otherwise = (x:ys):yss
-
 input :: IO [Int]
-input = map read . split (== ',') <$> readFile "day7-input.txt"
+input = readProgram "day7-input.txt"

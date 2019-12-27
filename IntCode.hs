@@ -215,3 +215,13 @@ execute arr = flip runContT return $
      readArray arr' 0
   where
     exec = do fetch >>= decode; exec
+
+split :: (a -> Bool) -> [a] -> [[a]]
+split f = foldr g [[]]
+  where
+    g x (ys:yss) 
+      | f x  = []:ys:yss
+      | otherwise = (x:ys):yss
+
+readProgram :: String -> IO [Int]
+readProgram file = map read . split (== ',') <$> readFile file

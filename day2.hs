@@ -28,12 +28,5 @@ task2 = fmap head . sequence $
                  guard (z == 19690720)
                  return (x, y)
 
-split :: (a -> Bool) -> [a] -> [[a]]
-split f = foldr g [[]]
-  where
-    g x (ys:yss) 
-      | f x  = []:ys:yss
-      | otherwise = (x:ys):yss
-
 input :: IO [Int]
-input = map read . split (== ',') <$> readFile "day2-input.txt"
+input = readProgram "day2-input.txt"
