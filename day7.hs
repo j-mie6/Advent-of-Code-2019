@@ -3,7 +3,6 @@
 {-# LANGUAGE OverlappingInstances #-}
 import Data.Array.ST
 import Control.Monad.ST
-import Control.Monad.Cont
 import Data.List
 import IntCode
 import Pipe
@@ -16,18 +15,8 @@ mkProgram :: [Int] -> PipeT Int (ST s) (STArray s Int Int)
 mkProgram = initialise
 
 ampControl :: [Int] -> [Int] -> [Int]
---ampControl xs is = snd (runST (runPipeT (mkProgram xs >>= execute) is))
-ampControl _ = snd . runPipe twoIncLoop
-
--- Let's try running it with this program instead (i.e. just Pipe)
--- and see what happens?
-twoIncLoop :: Pipe Int ()
-twoIncLoop = 
-  do pipeIn
-     x <- pipeIn
-     pipeOut (x + 1)
-     x <- pipeIn
-     pipeOut (x + 1)
+ampControl xs is = snd (runST (runPipeT (mkProgram xs >>= execute) is))
+--ampControl _ = snd . runPipe twoIncLoop
 
 loop :: [Int] -> [Int] -> [Int] -> [Int]
 loop xs = foldr (\p next is1 -> ampControl xs (p : next is1)) (0:)
